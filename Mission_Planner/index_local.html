@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aquality Mission Planner (Local)</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+    <style>
+        body { margin: 0; padding: 0; font-family: sans-serif; }
+        #map { width: 100%; height: 100vh; }
+        #controls {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            z-index: 1000; background: white; border-radius: 10px; padding: 12px 18px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.25); display: flex; align-items: center;
+            gap: 12px; font-size: 13px; flex-wrap: wrap; max-width: 95vw;
+        }
+        #controls label { font-weight: bold; color: #444; font-size: 10px; }
+        #controls input[type="number"] { width: 44px; padding: 3px 5px; border: 1px solid #ccc; border-radius: 5px; font-size: 11px; }
+        #controls button { padding: 4px 10px; border: none; border-radius: 5px; cursor: pointer; font-size: 11px; font-weight: bold; }
+        #generateBtn   { background: #2ecc71; color: white; }
+        #generateBtn:hover { background: #27ae60; }
+        #startMissionBtn { background: #9b59b6; color: white; display: none; }
+        #startMissionBtn:hover { background: #8e44ad; }
+        #stopBtn       { background: #e74c3c; color: white; display: none; }
+        #stopBtn:hover { background: #c0392b; }
+        #rtlBtn        { background: #e67e22; color: white; display: none; }
+        #rtlBtn:hover  { background: #d35400; }
+        #exportBtn     { background: #3498db; color: white; display: none; }
+        #exportBtn:hover { background: #2980b9; }
+        #clearDrawBtn  { background: #95a5a6; color: white; display: none; }
+        #clearDrawBtn:hover { background: #7f8c8d; }
+        #saveMissionBtn { background: #1abc9c; color: white; display: none; }
+        #saveMissionBtn:hover { background: #16a085; }
+        #setHomeBtn { background: #1e2130; border: 1px solid #3a3f52; color: #c8cad4; font-family: 'Courier New', monospace; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; padding: 4px 10px; border-radius: 5px; cursor: pointer; transition: background 0.2s, border-color 0.2s, color 0.2s; }
+        #setHomeBtn:hover { background: #2a3050; border-color: #f5a623; color: #f5a623; }
+        #setHomeBtn.active-mode { background: #2a3050; border-color: #f5a623; color: #f5a623; }
+        #mission-panel { position: absolute; top: 280px; left: 10px; z-index: 1000; background: white; border-radius: 8px; padding: 10px 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); font-size: 12px; min-width: 200px; }
+        #mission-panel strong { display: block; margin-bottom: 8px; color: #333; }
+        #mission-panel select { width: 100%; padding: 4px; margin-bottom: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; }
+        #mission-panel button { width: 100%; padding: 5px; margin-bottom: 4px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; }
+        #loadMissionBtn   { background: #3498db; color: white; }
+        #deleteMissionBtn { background: #e74c3c; color: white; }
+        #save-modal { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2000; background: white; border-radius: 10px; padding: 20px 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); min-width: 260px; text-align: center; }
+        #save-modal h3 { margin: 0 0 12px; font-size: 14px; color: #333; }
+        #save-modal input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; box-sizing: border-box; margin-bottom: 12px; }
+        #save-modal .modal-btns { display: flex; gap: 8px; }
+        #save-modal .modal-btns button { flex: 1; padding: 8px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; }
+        #confirmSaveBtn { background: #1abc9c; color: white; }
+        #cancelSaveBtn  { background: #95a5a6; color: white; }
+        .pill-select { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px; background: #f0f0f0; font-size: 12px; }
+        .pill-select select { border: none; background: transparent; font-size: 11px; font-weight: bold; cursor: pointer; }
+        #draw-hint { display: none; background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 5px 10px; font-size: 11px; color: #856404; white-space: nowrap; }
+        #draw-hint.visible { display: block; }
+        #status { color: #888; font-size: 11px; min-width: 180px; }
+        #telemetry { position: absolute; top: 80px; left: 10px; z-index: 1000; background: white; border-radius: 8px; padding: 10px 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); font-size: 12px; min-width: 220px; }
+        #telemetry strong { display: block; margin-bottom: 6px; color: #333; }
+        #telemetry div { margin: 4px 0; color: #666; }
+        #conn-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ccc; margin-right: 6px; }
+        #conn-dot.connected    { background: #2ecc71; }
+        #conn-dot.disconnected { background: #e74c3c; }
+        .wp-label { background: #2980b9; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; border: 2px solid white; box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
+        .transit-label { background: #2980b9; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; border: 2px solid white; box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <div id="save-modal">
+        <h3>💾 Save Mission</h3>
+        <input type="text" id="mission-name-input" placeholder="e.g. Toftasjön north..." maxlength="50" />
+        <div class="modal-btns">
+            <button id="confirmSaveBtn" onclick="confirmSaveMission()">Save</button>
+            <button id="cancelSaveBtn"  onclick="closeSaveModal()">Cancel</button>
+        </div>
+    </div>
+
+    <div id="mission-panel">
+        <strong>💾 Saved Missions</strong>
+        <select id="saved-missions-select"><option value="">-- No missions saved --</option></select>
+        <button id="loadMissionBtn"   onclick="loadSelectedMission()">Load Mission</button>
+        <button id="deleteMissionBtn" onclick="deleteSelectedMission()">Delete</button>
+    </div>
+
+    <div id="telemetry">
+        <strong><span id="conn-dot"></span>Live Telemetry</strong>
+        <div>Mode: <span id="telem-mode">-</span></div>
+        <div>Alt: <span id="telem-alt">-</span> m</div>
+        <div>Speed: <span id="telem-speed">-</span> m/s</div>
+        <div>Heading: <span id="telem-heading">-</span> deg</div>
+        <div>Battery: <span id="telem-battery">-</span>%</div>
+        <div>Armed: <span id="telem-armed">-</span></div>
+    </div>
+
+    <div id="controls">
+        <div class="pill-select">
+            <select id="input-mode" onchange="switchInputMode()">
+                <option value="search">Lake Search</option>
+                <option value="draw">Draw Area</option>
+                <option value="waypoints">Place Waypoints</option>
+                <option value="nogo">Draw No-Go Zone</option>
+                <option value="transit">Transit Waypoints</option>
+            </select>
+        </div>
+        <div id="draw-hint">Option+click to place points. Click near first point to close.</div>
+        <span id="lawnmower-controls">
+            <label>Spacing (m):</label>
+            <input type="number" id="spacing" value="10" min="1" max="500" />
+            <label>Angle:</label>
+            <input type="number" id="angle" value="90" min="0" max="360" style="width:40px;" />
+            <label>Margin (m):</label>
+            <input type="number" id="margin" value="5" min="0" max="100" />
+        </span>
+        <button id="generateBtn"    onclick="generateRoute()">Generate</button>
+        <button id="clearDrawBtn"   onclick="clearDraw()">Clear</button>
+        <button id="setHomeBtn">Set Home</button>
+        <button id="startMissionBtn" onclick="startMission()">Start Mission</button>
+        <button id="stopBtn"         onclick="emergencyStop()">Stop</button>
+        <button id="rtlBtn"          onclick="returnHome()">RTL</button>
+        <button id="exportBtn"       onclick="exportGeoJSON()">Export</button>
+        <button id="saveMissionBtn"  onclick="saveMission()">Save Mission</button>
+        <div style="display:flex; flex-direction:column; gap:3px;">
+            <button onclick="armOn()"   style="padding:3px 10px; border:none; border-radius:5px; cursor:pointer; font-size:11px; font-weight:bold; background:#27ae60; color:white;">ARM</button>
+            <button onclick="SetAuto()" style="padding:3px 10px; border:none; border-radius:5px; cursor:pointer; font-size:11px; font-weight:bold; background:#2980b9; color:white;">Auto</button>
+            <button onclick="setHold()" style="padding:3px 10px; border:none; border-radius:5px; cursor:pointer; font-size:11px; font-weight:bold; background:#e67e22; color:white;">Hold</button>
+            <button onclick="setManual()" style="padding:3px 10px; border:none; border-radius:5px; cursor:pointer; font-size:11px; font-weight:bold; background:#7f8c8d; color:white;">Manual</button>
+            <button onclick="Disarm()" style="padding:3px 10px; border:none; border-radius:5px; cursor:pointer; font-size:11px; font-weight:bold; background:#e74c3c; color:white;">Disarm</button>
+        </div>
+        <button onclick="openEditPanel()" style="padding:4px 10px; border:none; border-radius:5px; cursor:pointer; font-size:11px; font-weight:bold; background:#8e44ad; color:white;">Edit Loiter</button>
+        <span id="status">Search for a lake or draw an area</span>
+    </div>
+
+    <div id="edit-panel" style="display:none; position:fixed; bottom:0; left:0; right:0; z-index:2000; background:#1a1a2e; border-top:2px solid #334; height:320px; flex-direction:column;">
+        <div style="padding:10px 16px; border-bottom:1px solid #334; display:flex; align-items:center; gap:16px; flex-shrink:0;">
+            <strong style="color:#eee; font-size:13px;">Edit Loiter Times</strong>
+            <div style="display:flex; align-items:center; gap:8px;">
+                <label style="color:#aab; font-size:12px;">Set all:</label>
+                <input type="number" id="loiter-all" value="0" min="0" style="width:60px; padding:3px 6px; border-radius:4px; border:1px solid #445; background:#222; color:#eee; font-size:12px;" />
+                <button onclick="setAllLoiter()" style="padding:4px 10px; border:none; border-radius:4px; background:#2980b9; color:white; font-size:12px; cursor:pointer;">Apply</button>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+                <label style="color:#aab; font-size:12px;">Set range WP</label>
+                <input type="number" id="range-from" value="1" min="1" style="width:55px; padding:3px 6px; border-radius:4px; border:1px solid #445; background:#222; color:#eee; font-size:12px;" />
+                <label style="color:#aab; font-size:12px;">to</label>
+                <input type="number" id="range-to" value="10" min="1" style="width:55px; padding:3px 6px; border-radius:4px; border:1px solid #445; background:#222; color:#eee; font-size:12px;" />
+                <label style="color:#aab; font-size:12px;">loiter:</label>
+                <input type="number" id="loiter-range" value="0" min="0" style="width:60px; padding:3px 6px; border-radius:4px; border:1px solid #445; background:#222; color:#eee; font-size:12px;" />
+                <button onclick="setRangeLoiter()" style="padding:4px 10px; border:none; border-radius:4px; background:#2980b9; color:white; font-size:12px; cursor:pointer;">Apply</button>
+            </div>
+            <div style="margin-left:auto; display:flex; gap:8px;">
+                <button onclick="saveEditPanel()" style="padding:4px 14px; border:none; border-radius:4px; background:#27ae60; color:white; font-size:12px; font-weight:bold; cursor:pointer;">Save Changes</button>
+                <button onclick="closeEditPanel()" style="padding:4px 14px; border:none; border-radius:4px; background:#555; color:white; font-size:12px; cursor:pointer;">Close</button>
+            </div>
+        </div>
+        <div style="overflow-y:auto; flex:1;">
+            <table id="edit-table" style="width:100%; border-collapse:collapse; font-size:12px;">
+                <thead style="position:sticky; top:0; background:#0f1117;">
+                    <tr>
+                        <th style="padding:6px 12px; text-align:left; color:#667; font-weight:normal; border-bottom:1px solid #334;">WP#</th>
+                        <th style="padding:6px 12px; text-align:left; color:#667; font-weight:normal; border-bottom:1px solid #334;">Latitude</th>
+                        <th style="padding:6px 12px; text-align:left; color:#667; font-weight:normal; border-bottom:1px solid #334;">Longitude</th>
+                        <th style="padding:6px 12px; text-align:left; color:#667; font-weight:normal; border-bottom:1px solid #334;">Loiter (s)</th>
+                    </tr>
+                </thead>
+                <tbody id="edit-table-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://unpkg.com/leaflet-editable@1.2.0/src/Leaflet.Editable.js"></script>
+    <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+    <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>
+    <script src="https://unpkg.com/osmtogeojson/osmtogeojson.js"></script>
+
+    <script>
+    // ── All requests go to local backend ──────────────
+    const DRONE_BASE = 'http://localhost:8080';
+
+    var currentInputMode = 'search';
+    var currentMissionFilename = null;
+
+    function switchInputMode() {
+        var previousMode = currentInputMode;
+        currentInputMode = document.getElementById('input-mode').value;
+        if (currentInputMode !== 'nogo' && currentInputMode !== 'transit' && currentInputMode !== 'draw' && previousMode !== 'transit') {
+            clearDraw();
+        } else {
+            if (noGoDrawPolyline) { noGoDrawPolyline.editor.disable(); noGoDrawPolyline.remove(); noGoDrawPolyline = null; }
+            noGoDrawMarkers.forEach(function(m) { map.removeLayer(m); }); noGoDrawMarkers = [];
+        }
+        var hint = document.getElementById('draw-hint');
+        var lc   = document.getElementById('lawnmower-controls');
+        var gen  = document.getElementById('generateBtn');
+        hint.classList.remove('visible');
+        lc.style.display  = 'inline-flex';
+        gen.style.display = 'inline-block';
+        if (currentInputMode === 'draw') {
+            hint.textContent = 'Option+click to place points. Click near first point to close.';
+            hint.classList.add('visible');
+            setStatus('Option+click on the map to draw your survey area.');
+        } else if (currentInputMode === 'waypoints') {
+            hint.textContent = 'Click on the map to place waypoints in order.';
+            hint.classList.add('visible');
+            lc.style.display  = 'none';
+            gen.style.display = 'none';
+            setStatus('Click on the map to place waypoints.');
+        } else if (currentInputMode === 'nogo') {
+            hint.textContent = 'Option+click to draw no-go zone. Click near first point to close.';
+            hint.classList.add('visible');
+            lc.style.display  = 'none';
+            gen.style.display = 'inline-block';
+            setStatus('Option+click to draw a no-go zone.');
+        } else if (currentInputMode === 'transit') {
+            hint.textContent = 'Click on the map to place transit waypoints in order.';
+            hint.classList.add('visible');
+            lc.style.display  = 'none';
+            gen.style.display = 'none';
+            setStatus('Click to place transit waypoints.');
+        } else {
+            setStatus('Search for a lake or draw an area.');
+        }
+    }
+
+    async function SetAuto()  { try { const r = await fetch(DRONE_BASE+'/nav/AutoModeOn',{method:'POST'}); const d=await r.json(); setStatus(d.status); } catch(e){setStatus('Failed: '+e.message);} }
+    async function setHold()  { try { const r = await fetch(DRONE_BASE+'/nav/hold',{method:'POST'}); const d=await r.json(); setStatus(d.status); } catch(e){setStatus('Failed: '+e.message);} }
+    async function setManual(){ if(!confirm('Switch to MANUAL?')) return; try { const r = await fetch(DRONE_BASE+'/nav/manual',{method:'POST'}); const d=await r.json(); setStatus(d.status); } catch(e){setStatus('Failed: '+e.message);} }
+    async function armOn()    { try { const r = await fetch(DRONE_BASE+'/nav/ArmOn',{method:'POST'}); const d=await r.json(); setStatus(d.status); } catch(e){setStatus('Failed: '+e.message);} }
+    async function Disarm()   { try { const r = await fetch(DRONE_BASE+'/nav/Disarm',{method:'POST'}); const d=await r.json(); setStatus(d.status); } catch(e){setStatus('Failed: '+e.message);} }
+
+    // ── Map ───────────────────────────────────────────
+    var map = L.map('map', { editable: true }).setView([56.6744, 12.8578], 13);
+    var osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' });
+    var stadia = L.tileLayer('https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}{r}.{ext}', { minZoom: 0, maxZoom: 20, attribution: '&copy; Stadia Maps', ext: 'png' });
+    stadia.addTo(map);
+    L.control.layers({ 'OSM': osm, 'Stadia Bright': stadia }, {}).addTo(map);
+
+    // ── State ─────────────────────────────────────────
+    var currentLakeLayer = null, currentRouteLayer = null, currentLakeGeoJSON = null, routeGeoJSON = null;
+    var droneMarker = null, droneTrail = [], hasFirstFix = false;
+    var drawPolyline = null, drawMarkers = [], drawPolygonLayer = null, drawnTurfPolygon = null;
+    var SNAP_RADIUS = 20;
+    var wpMarkers = [], wpLineLayer = null, wpLoiterTimes = [];
+    var noGoZones = [], noGoLayers = [], noGoDrawPolyline = null, noGoDrawMarkers = [];
+    var homeMarker = null, homePlacingMode = false;
+    var transitMarkers = [], transitLineLayer = null;
+    var fenceCoords = null, fenceLayer = null;
+    var editHighlightMarker = null;
+
+    // ── Clear ─────────────────────────────────────────
+    function clearDraw() {
+        document.getElementById('saveMissionBtn').style.display = 'none';
+        if (drawPolyline) { drawPolyline.editor.disable(); drawPolyline.remove(); drawPolyline = null; }
+        if (drawPolygonLayer) { map.removeLayer(drawPolygonLayer); drawPolygonLayer = null; }
+        drawMarkers.forEach(function(m) { map.removeLayer(m); }); drawMarkers = [];
+        drawnTurfPolygon = null;
+        wpMarkers.forEach(function(m) { map.removeLayer(m); }); wpMarkers = [];
+        wpLoiterTimes = [];
+        if (wpLineLayer) { map.removeLayer(wpLineLayer); wpLineLayer = null; }
+        if (currentRouteLayer) { map.removeLayer(currentRouteLayer); currentRouteLayer = null; }
+        if (window.returnPathLayer) { map.removeLayer(window.returnPathLayer); window.returnPathLayer = null; }
+        routeGeoJSON = null;
+        noGoZones = [];
+        noGoLayers.forEach(function(l) { map.removeLayer(l); }); noGoLayers = [];
+        if (noGoDrawPolyline) { noGoDrawPolyline.editor.disable(); noGoDrawPolyline.remove(); noGoDrawPolyline = null; }
+        noGoDrawMarkers.forEach(function(m) { map.removeLayer(m); }); noGoDrawMarkers = [];
+        transitMarkers.forEach(function(m) { map.removeLayer(m); }); transitMarkers = [];
+        if (transitLineLayer) { map.removeLayer(transitLineLayer); transitLineLayer = null; }
+        if (window.transitRouteLayer) { map.removeLayer(window.transitRouteLayer); window.transitRouteLayer = null; }
+        if (homeMarker) { map.removeLayer(homeMarker); homeMarker = null; }
+        currentMissionFilename = null;
+        document.getElementById('clearDrawBtn').style.display = 'none';
+        document.getElementById('startMissionBtn').style.display = 'none';
+        document.getElementById('exportBtn').style.display = 'none';
+    }
+
+    // ── Map click ─────────────────────────────────────
+    map.on('click', function(e) {
+        var latlng = e.latlng;
+
+        if (homePlacingMode) {
+            if (homeMarker) map.removeLayer(homeMarker);
+            var homeIcon = L.divIcon({ className: '', html: '<div style="background:#f5a623;width:22px;height:22px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 8px #f5a623;display:flex;align-items:center;justify-content:center;font-size:13px;">🏠</div>', iconSize: [22,22], iconAnchor: [11,11] });
+            homeMarker = L.marker(latlng, { icon: homeIcon }).addTo(map);
+            homeMarker.bindTooltip('Home / Pickup point', { permanent: true, direction: 'top', offset: [0,-14] });
+            homePlacingMode = false;
+            document.getElementById('setHomeBtn').classList.remove('active-mode');
+            setStatus('Home position set.');
+            return;
+        }
+
+        if (currentInputMode === 'draw') {
+            if (!e.originalEvent.altKey) return;
+            if (drawPolyline && drawMarkers.length >= 2) {
+                for (var i = 0; i < drawMarkers.length; i++) {
+                    var mp = map.latLngToContainerPoint(drawMarkers[i].getLatLng());
+                    var cp = map.latLngToContainerPoint(latlng);
+                    if (mp.distanceTo(cp) < SNAP_RADIUS) { finishDrawing(); return; }
+                }
+            }
+            var marker = L.marker(latlng).addTo(map);
+            drawMarkers.push(marker);
+            document.getElementById('clearDrawBtn').style.display = 'inline-block';
+            if (!drawPolyline) {
+                drawPolyline = map.editTools.startPolyline(latlng);
+                setStatus('Keep Option+clicking. Click near first point to close.');
+            } else {
+                drawPolyline.editor.newPointForward(latlng);
+            }
+
+        } else if (currentInputMode === 'waypoints') {
+            var num = wpMarkers.length + 1;
+            var loiterInput = prompt('Waypoint ' + num + ' — Loiter time (seconds):', '0');
+            if (loiterInput === null) return;
+            var loiter = parseInt(loiterInput) || 0;
+            wpLoiterTimes.push(loiter);
+            var labelHtml = '<div class="wp-label" style="' + (loiter > 0 ? 'background:#e67e22;' : '') + '">' + num + (loiter > 0 ? '<br><span style="font-size:9px;">' + loiter + 's</span>' : '') + '</div>';
+            var icon = L.divIcon({ className: '', html: labelHtml, iconSize: [24, loiter > 0 ? 32 : 24], iconAnchor: [12, loiter > 0 ? 16 : 12] });
+            var wm = L.marker(latlng, { icon: icon }).addTo(map);
+            wm.bindTooltip('Waypoint ' + num + (loiter > 0 ? ' — Loiter ' + loiter + 's' : ''), { direction: 'top' });
+            wpMarkers.push(wm);
+            if (wpLineLayer) map.removeLayer(wpLineLayer);
+            if (wpMarkers.length > 1) {
+                wpLineLayer = L.polyline(wpMarkers.map(function(m) { return m.getLatLng(); }), { color: '#2980b9', weight: 2, dashArray: '6 4', opacity: 0.8 }).addTo(map);
+            }
+            document.getElementById('clearDrawBtn').style.display = 'inline-block';
+            routeGeoJSON = { type: 'FeatureCollection', features: [{ type: 'Feature',
+                properties: { name: 'Manual Waypoints', waypoint_count: num, loiter_times: Array(num).fill(0).map((_, i) => wpLoiterTimes[i] || 0) },
+                geometry: { type: 'LineString', coordinates: wpMarkers.map(function(m) { return [m.getLatLng().lng, m.getLatLng().lat]; }) } }] };
+            if (wpMarkers.length >= 2) {
+                document.getElementById('startMissionBtn').style.display = 'inline-block';
+                document.getElementById('exportBtn').style.display = 'inline-block';
+                document.getElementById('saveMissionBtn').style.display = 'inline-block';
+            }
+            setStatus(num + ' waypoint(s) placed. Click Start Mission when ready.');
+
+        } else if (currentInputMode === 'nogo') {
+            if (!e.originalEvent.altKey) return;
+            if (noGoDrawPolyline && noGoDrawMarkers.length >= 2) {
+                for (var i = 0; i < noGoDrawMarkers.length; i++) {
+                    var mp = map.latLngToContainerPoint(noGoDrawMarkers[i].getLatLng());
+                    var cp = map.latLngToContainerPoint(latlng);
+                    if (mp.distanceTo(cp) < SNAP_RADIUS) { finishNoGoZone(); return; }
+                }
+            }
+            var m = L.marker(latlng).addTo(map);
+            noGoDrawMarkers.push(m);
+            document.getElementById('clearDrawBtn').style.display = 'inline-block';
+            if (!noGoDrawPolyline) {
+                noGoDrawPolyline = map.editTools.startPolyline(latlng);
+            } else {
+                noGoDrawPolyline.editor.newPointForward(latlng);
+            }
+
+        } else if (currentInputMode === 'transit') {
+            var num = transitMarkers.length + 1;
+            var icon = L.divIcon({ className: '', html: '<div class="transit-label">T' + num + '</div>', iconSize: [22,22], iconAnchor: [11,11] });
+            var tm = L.marker(latlng, { icon: icon }).addTo(map);
+            tm.bindTooltip('Transit ' + num, { direction: 'top' });
+            transitMarkers.push(tm);
+            if (transitLineLayer) map.removeLayer(transitLineLayer);
+            if (transitMarkers.length > 1) {
+                transitLineLayer = L.polyline(transitMarkers.map(function(m) { return m.getLatLng(); }), { color: '#2980b9', weight: 2, dashArray: '6 4', opacity: 0.8 }).addTo(map);
+            }
+            document.getElementById('clearDrawBtn').style.display = 'inline-block';
+            setStatus(num + ' transit waypoint(s) placed.');
+        }
+    });
+
+    function finishDrawing() {
+        if (!drawPolyline) return;
+        var latlngs = drawPolyline.getLatLngs();
+        drawPolyline.editor.disable(); drawPolyline.remove(); drawPolyline = null;
+        drawMarkers.forEach(function(m) { map.removeLayer(m); }); drawMarkers = [];
+        if (latlngs.length < 3) { setStatus('Need at least 3 points.'); return; }
+        if (drawPolygonLayer) map.removeLayer(drawPolygonLayer);
+        drawPolygonLayer = L.polygon(latlngs, { color: '#1a66cc', fillColor: '#3388ff', fillOpacity: 0.25, weight: 2 }).addTo(map);
+        var coords = latlngs.map(function(ll) { return [ll.lng, ll.lat]; }); coords.push(coords[0]);
+        drawnTurfPolygon = turf.polygon([coords]);
+        setStatus('Area drawn. Click Generate.');
+        document.getElementById('generateBtn').style.display = 'inline-block';
+    }
+
+    function finishNoGoZone() {
+        if (!noGoDrawPolyline) return;
+        var latlngs = noGoDrawPolyline.getLatLngs();
+        noGoDrawPolyline.editor.disable(); noGoDrawPolyline.remove(); noGoDrawPolyline = null;
+        noGoDrawMarkers.forEach(function(m) { map.removeLayer(m); }); noGoDrawMarkers = [];
+        if (latlngs.length < 3) { setStatus('Need at least 3 points.'); return; }
+        var layer = L.polygon(latlngs, { color: '#e74c3c', fillColor: '#e74c3c', fillOpacity: 0.3, weight: 2 }).addTo(map);
+        layer.bindTooltip('No-go zone ' + (noGoZones.length + 1), { direction: 'top' });
+        noGoLayers.push(layer);
+        var coords = latlngs.map(function(ll) { return [ll.lng, ll.lat]; }); coords.push(coords[0]);
+        noGoZones.push(coords);
+        setStatus('No-go zone ' + noGoZones.length + ' added.');
+    }
+
+    L.Control.geocoder({ defaultMarkGeocode: false, placeholder: 'Search lake...', collapsed: false })
+    .on('markgeocode', function(e) {
+        map.flyToBounds(e.geocode.bbox, { padding: [40,40], maxZoom: 16 });
+        L.marker(e.geocode.center).addTo(map).bindPopup('<b>' + e.geocode.name + '</b>').openPopup();
+        fetchLake(e.geocode.name.split(',')[0].trim(), e.geocode.bbox);
+    }).addTo(map);
+
+    function fetchLake(lakeName, bbox, retryCount) {
+        if (retryCount === undefined) retryCount = 0;
+        setStatus('Fetching lake shape...');
+        var south = bbox.getSouth(), west = bbox.getWest(), north = bbox.getNorth(), east = bbox.getEast();
+        var query = '[out:json][timeout:120][bbox:' + south + ',' + west + ',' + north + ',' + east + '];' +
+            '(relation["name"="' + lakeName + '"]["natural"="water"];' +
+            'way["name"="' + lakeName + '"]["natural"="water"];);out geom;';
+        fetch('https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(query))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (currentLakeLayer) map.removeLayer(currentLakeLayer);
+            var geojson = osmtogeojson(data); currentLakeGeoJSON = geojson;
+            currentLakeLayer = L.geoJSON(geojson, { style: { color: '#1a66cc', fillColor: '#3388ff', fillOpacity: 0.35, weight: 2 } }).addTo(map);
+            if (currentLakeLayer.getLayers().length > 0) { map.fitBounds(currentLakeLayer.getBounds()); setStatus('Lake loaded.'); }
+            else setStatus('No lake found. Try drawing the area manually.');
+        })
+        .catch(function() { setStatus('Failed to fetch lake. Try drawing manually.'); });
+    }
+
+    function generateRoute() {
+        var spacingMeters = parseFloat(document.getElementById('spacing').value);
+        var marginMeters  = parseFloat(document.getElementById('margin').value);
+        var angleDeg      = parseFloat(document.getElementById('angle').value) || 90;
+        if (isNaN(spacingMeters) || spacingMeters < 1) { setStatus('Enter a valid spacing.'); return; }
+        setTimeout(function() {
+            try {
+                if (currentRouteLayer) { map.removeLayer(currentRouteLayer); currentRouteLayer = null; }
+                var turfPolygon = null;
+                if (currentInputMode === 'draw' || currentInputMode === 'nogo') {
+                    if (drawPolyline) finishDrawing();
+                    if (!drawnTurfPolygon) { setStatus('Draw an area first.'); return; }
+                    turfPolygon = drawnTurfPolygon;
+                } else {
+                    if (!currentLakeGeoJSON) { setStatus('Draw an area first.'); return; }
+                    var features = currentLakeGeoJSON.features.filter(function(f) { return f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon'; });
+                    if (!features.length) { setStatus('No polygon found.'); return; }
+                    turfPolygon = features[0];
+                }
+                generateLawnmowerRoute(turfPolygon, spacingMeters, angleDeg, marginMeters);
+            } catch(err) { setStatus('Error: ' + err.message); }
+        }, 50);
+    }
+
+    async function generateLawnmowerRoute(turfPolygon, spacingMeters, angleDeg, marginMeters) {
+        try {
+            setStatus('Generating route...');
+            var coords = turfPolygon.geometry.coordinates[0].map(function(c) { return [c[0], c[1]]; });
+            var homeCoord = homeMarker ? [homeMarker.getLatLng().lng, homeMarker.getLatLng().lat] : null;
+            var astarTarget = homeCoord;
+            if (transitMarkers.length > 0) {
+                var firstTransit = transitMarkers[transitMarkers.length - 1].getLatLng();
+                astarTarget = [firstTransit.lng, firstTransit.lat];
+            }
+            const res = await fetch(DRONE_BASE + '/nav/generate_lawnmower', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ coordinates: coords, spacing: spacingMeters, angle: angleDeg, safety: marginMeters, no_go_zones: noGoZones.length > 0 ? noGoZones : null, home_coord: astarTarget })
+            });
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+            var coordinates = data.waypoints;
+            var returnPath = data.return_path || [];
+
+            var transitCoords = transitMarkers.map(function(m) { return [m.getLatLng().lng, m.getLatLng().lat]; });
+            var transitReverse = transitCoords.slice().reverse();
+            var homeCoordArray = homeCoord ? [homeCoord] : [];
+            var allCoordinates = transitCoords.concat(coordinates).concat(returnPath).concat(transitReverse).concat(homeCoordArray);
+
+            routeGeoJSON = { type: 'FeatureCollection', features: [{ type: 'Feature',
+                properties: { name: 'Lawnmower Route', spacing_meters: spacingMeters, angle_deg: angleDeg, waypoint_count: allCoordinates.length },
+                geometry: { type: 'LineString', coordinates: allCoordinates } }] };
+            routeGeoJSON.features[0].properties.loiter_times = new Array(allCoordinates.length).fill(0);
+
+            if (currentRouteLayer) map.removeLayer(currentRouteLayer);
+            currentRouteLayer = L.geoJSON({ type:'FeatureCollection', features:[{ type:'Feature', properties:{}, geometry:{ type:'LineString', coordinates:coordinates } }] }, { style: { color: '#27ae60', weight: 1.5, opacity: 0.9 } }).addTo(map);
+
+            if (window.returnPathLayer) map.removeLayer(window.returnPathLayer);
+            if (returnPath.length > 1) {
+                window.returnPathLayer = L.geoJSON({ type:'FeatureCollection', features:[{ type:'Feature', properties:{}, geometry:{ type:'LineString', coordinates:returnPath } }] }, { style: { color: '#f5a623', weight: 2, opacity: 0.9, dashArray: '6 4' } }).addTo(map);
+            }
+
+            if (window.transitRouteLayer) map.removeLayer(window.transitRouteLayer);
+            if (transitCoords.length > 0) {
+                window.transitRouteLayer = L.geoJSON({ type:'FeatureCollection', features:[{ type:'Feature', properties:{}, geometry:{ type:'LineString', coordinates:transitCoords.concat(transitReverse) } }] }, { style: { color: '#2980b9', weight: 2, opacity: 0.9, dashArray: '6 4' } }).addTo(map);
+            }
+
+            setStatus('Route ready: ' + coordinates.length + ' coverage + ' + returnPath.length + ' return waypoints.');
+            document.getElementById('exportBtn').style.display = 'inline-block';
+            document.getElementById('saveMissionBtn').style.display = 'inline-block';
+            document.getElementById('startMissionBtn').style.display = 'inline-block';
+        } catch(e) { setStatus('Error: ' + e.message); }
+    }
+
+    async function startMission() {
+        if (!routeGeoJSON) { alert('Generate a route or place waypoints first.'); return; }
+        if (!homeMarker) { alert('Please set a home point first!'); return; }
+        var homeLatlng = homeMarker.getLatLng();
+        routeGeoJSON.features[0].properties.home_point = [homeLatlng.lng, homeLatlng.lat];
+        try {
+            setStatus('Uploading mission...');
+            const uploadRes = await fetch(DRONE_BASE + '/nav/upload_mission', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(routeGeoJSON) });
+            const uploadData = await uploadRes.json();
+            if (uploadData.error) throw new Error(uploadData.error);
+            setStatus('Mission uploaded! (simulated — no real drone connected)');
+            document.getElementById('stopBtn').style.display = 'inline-block';
+            document.getElementById('rtlBtn').style.display = 'inline-block';
+        } catch (error) { setStatus('Error: ' + error.message); }
+    }
+
+    async function emergencyStop() {
+        if (confirm('Emergency stop?')) {
+            try { await fetch(DRONE_BASE + '/nav/stop', { method: 'POST' }); setStatus('Stop sent (simulated).'); } catch(e) {}
+        }
+    }
+
+    async function returnHome() {
+        if (confirm('Return to home?')) {
+            try { await fetch(DRONE_BASE + '/nav/rtl', { method: 'POST' }); setStatus('RTL sent (simulated).'); } catch(e) {}
+        }
+    }
+
+    async function fetchTelemetry() {
+        try {
+            const res = await fetch(DRONE_BASE + '/nav/telemetry');
+            const data = await res.json();
+            document.getElementById('conn-dot').className = 'connected';
+            document.getElementById('telem-mode').textContent    = data.mode;
+            document.getElementById('telem-alt').textContent     = typeof data.alt === 'number' ? data.alt.toFixed(1) : data.alt;
+            document.getElementById('telem-speed').textContent   = typeof data.groundspeed === 'number' ? data.groundspeed.toFixed(1) : data.groundspeed;
+            document.getElementById('telem-heading').textContent = data.heading;
+            document.getElementById('telem-battery').textContent = data.battery;
+            document.getElementById('telem-armed').textContent   = data.armed ? 'ARMED' : 'DISARMED';
+        } catch (error) { document.getElementById('conn-dot').className = 'disconnected'; }
+    }
+    setInterval(fetchTelemetry, 2000);
+    fetchTelemetry();
+
+    function exportGeoJSON() {
+        if (!routeGeoJSON) return;
+        var blob = new Blob([JSON.stringify(routeGeoJSON, null, 2)], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a'); a.href = url; a.download = 'mission.geojson'; a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    function saveMission() {
+        if (!routeGeoJSON) return;
+        document.getElementById('mission-name-input').value = '';
+        document.getElementById('save-modal').style.display = 'block';
+        document.getElementById('mission-name-input').focus();
+    }
+    function closeSaveModal() { document.getElementById('save-modal').style.display = 'none'; }
+
+    async function refreshMissionList() {
+        try {
+            const res = await fetch(DRONE_BASE + '/missions/list');
+            const missions = await res.json();
+            const select = document.getElementById('saved-missions-select');
+            select.innerHTML = missions.length
+                ? missions.map(m => `<option value="${m.filename}">${m.name} (${m.created.slice(0,10)})</option>`).join('')
+                : '<option value="">-- No missions saved --</option>';
+        } catch(e) { console.error('Could not load mission list:', e); }
+    }
+
+    async function confirmSaveMission() {
+        const name = document.getElementById('mission-name-input').value.trim();
+        if (!name) { alert('Enter a mission name.'); return; }
+        closeSaveModal();
+        try {
+            var inputs = document.querySelectorAll('#edit-table-body input[type="number"]');
+            if (inputs.length > 0) {
+                var loiterTimes = [];
+                inputs.forEach(function(inp) { loiterTimes.push(parseInt(inp.value) || 0); });
+                routeGeoJSON.features[0].properties.loiter_times = loiterTimes;
+            }
+            if (routeGeoJSON) {
+                routeGeoJSON.features[0].properties.fence_coords   = fenceCoords || null;
+                routeGeoJSON.features[0].properties.no_go_zones    = noGoZones.length > 0 ? noGoZones : null;
+                routeGeoJSON.features[0].properties.transit_coords = transitMarkers.map(function(m) { return [m.getLatLng().lng, m.getLatLng().lat]; });
+                if (homeMarker) routeGeoJSON.features[0].properties.home_point = [homeMarker.getLatLng().lng, homeMarker.getLatLng().lat];
+                if (drawnTurfPolygon) routeGeoJSON.features[0].properties.survey_coords = drawnTurfPolygon.geometry.coordinates[0];
+                else routeGeoJSON.features[0].properties.survey_coords = null;
+            }
+            const res = await fetch(DRONE_BASE + '/missions/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, geojson: routeGeoJSON }) });
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+            currentMissionFilename = data.filename;
+            setStatus('Mission "' + name + '" saved!');
+            await refreshMissionList();
+        } catch(e) { setStatus('Save failed: ' + e.message); }
+    }
+
+    async function loadSelectedMission() {
+        const filename = document.getElementById('saved-missions-select').value;
+        if (!filename) { alert('Select a mission first.'); return; }
+        try {
+            const res = await fetch(DRONE_BASE + '/missions/load/' + filename);
+            const data = await res.json();
+            if (!data.geojson || !data.geojson.features) throw new Error('Invalid mission data');
+            if (data.error) throw new Error(data.error);
+
+            clearDraw();
+            routeGeoJSON = data.geojson;
+            currentMissionFilename = filename;
+            if (fenceLayer) { map.removeLayer(fenceLayer); fenceLayer = null; }
+            fenceCoords = null;
+
+            const props = routeGeoJSON.features[0].properties;
+            const coords = routeGeoJSON.features[0].geometry.coordinates;
+            const loiterTimes = props.loiter_times || [];
+
+            if (props.fence_coords) {
+                fenceCoords = props.fence_coords;
+                var fenceLatlngs = fenceCoords.slice(0,-1).map(function(c) { return [c[1], c[0]]; });
+                fenceLayer = L.polygon(fenceLatlngs, { color: '#00b4d8', fillColor: '#00b4d8', fillOpacity: 0.08, weight: 2, dashArray: '8 4' }).addTo(map);
+            }
+            if (props.survey_coords) {
+                var surveyLatlngs = props.survey_coords.map(function(c) { return [c[1], c[0]]; });
+                drawPolygonLayer = L.polygon(surveyLatlngs, { color: '#1a66cc', fillColor: '#3388ff', fillOpacity: 0.25, weight: 2 }).addTo(map);
+                drawnTurfPolygon = turf.polygon([props.survey_coords]);
+            }
+            if (props.no_go_zones && props.no_go_zones.length > 0) {
+                props.no_go_zones.forEach(function(zoneCoords) {
+                    var latlngs = zoneCoords.slice(0,-1).map(function(c) { return [c[1], c[0]]; });
+                    var layer = L.polygon(latlngs, { color: '#e74c3c', fillColor: '#e74c3c', fillOpacity: 0.3, weight: 2 }).addTo(map);
+                    noGoLayers.push(layer); noGoZones.push(zoneCoords);
+                });
+            }
+            coords.forEach(function(coord, i) {
+                const loiter = loiterTimes[i] || 0;
+                const labelHtml = '<div class="wp-label" style="' + (loiter > 0 ? 'background:#e67e22;' : '') + '">' + (i+1) + (loiter > 0 ? '<br><span style="font-size:9px;">' + loiter + 's</span>' : '') + '</div>';
+                const icon = L.divIcon({ className: '', html: labelHtml, iconSize: [24, loiter > 0 ? 32 : 24], iconAnchor: [12, loiter > 0 ? 16 : 12] });
+                const wm = L.marker([coord[1], coord[0]], { icon: icon }).addTo(map);
+                wm.bindTooltip('Waypoint ' + (i+1), { direction: 'top' });
+                wpMarkers.push(wm);
+            });
+            if (coords.length > 1) {
+                wpLineLayer = L.polyline(coords.map(function(c) { return [c[1], c[0]]; }), { color: '#1abc9c', weight: 2, dashArray: '6 4', opacity: 0.8 }).addTo(map);
+                map.fitBounds(wpLineLayer.getBounds());
+            }
+            if (props.home_point) {
+                if (homeMarker) map.removeLayer(homeMarker);
+                var homeIcon = L.divIcon({ className: '', html: '<div style="background:#f5a623;width:22px;height:22px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 8px #f5a623;display:flex;align-items:center;justify-content:center;font-size:13px;">🏠</div>', iconSize: [22,22], iconAnchor: [11,11] });
+                homeMarker = L.marker([props.home_point[1], props.home_point[0]], { icon: homeIcon }).addTo(map);
+                homeMarker.bindTooltip('Home / Pickup point', { permanent: true, direction: 'top', offset: [0,-14] });
+            }
+            if (props.transit_coords && props.transit_coords.length > 0) {
+                props.transit_coords.forEach(function(coord, i) {
+                    var icon = L.divIcon({ className: '', html: '<div class="transit-label">T' + (i+1) + '</div>', iconSize: [22,22], iconAnchor: [11,11] });
+                    var tm = L.marker([coord[1], coord[0]], { icon: icon }).addTo(map);
+                    tm.bindTooltip('Transit ' + (i+1), { direction: 'top' });
+                    transitMarkers.push(tm);
+                });
+                if (transitMarkers.length > 1) {
+                    transitLineLayer = L.polyline(transitMarkers.map(function(m) { return m.getLatLng(); }), { color: '#2980b9', weight: 2, dashArray: '6 4', opacity: 0.8 }).addTo(map);
+                }
+            }
+            document.getElementById('startMissionBtn').style.display = 'inline-block';
+            document.getElementById('exportBtn').style.display = 'inline-block';
+            document.getElementById('clearDrawBtn').style.display = 'inline-block';
+            setStatus('Mission "' + data.name + '" loaded — ' + coords.length + ' waypoints.');
+        } catch(e) { setStatus('Load failed: ' + e.message); }
+    }
+
+    async function deleteSelectedMission() {
+        const filename = document.getElementById('saved-missions-select').value;
+        if (!filename) return;
+        if (!confirm('Delete this mission?')) return;
+        try {
+            await fetch(DRONE_BASE + '/missions/delete/' + filename, { method: 'DELETE' });
+            await refreshMissionList();
+            setStatus('Mission deleted.');
+        } catch(e) { setStatus('Delete failed: ' + e.message); }
+    }
+
+    document.getElementById('mission-name-input').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') confirmSaveMission();
+        if (e.key === 'Escape') closeSaveModal();
+    });
+
+    document.getElementById('setHomeBtn').addEventListener('click', function() {
+        homePlacingMode = !homePlacingMode;
+        if (homePlacingMode) { this.classList.add('active-mode'); setStatus('Click on the map to place home position.'); }
+        else { this.classList.remove('active-mode'); setStatus('Home placement cancelled.'); }
+    });
+
+    function setStatus(msg) { document.getElementById('status').textContent = msg; }
+    refreshMissionList();
+
+    // ── Edit panel ────────────────────────────────────
+    function openEditPanel() {
+        if (!routeGeoJSON) { setStatus('Generate or load a mission first.'); return; }
+        var coords = routeGeoJSON.features[0].geometry.coordinates;
+        var loiterTimes = routeGeoJSON.features[0].properties.loiter_times || [];
+        var tbody = document.getElementById('edit-table-body');
+        tbody.innerHTML = '';
+        coords.forEach(function(coord, i) {
+            var loiter = loiterTimes[i] || 0;
+            var tr = document.createElement('tr');
+            tr.style.cursor = 'pointer';
+            tr.style.borderBottom = '1px solid #222';
+            tr.innerHTML =
+                '<td style="padding:5px 12px; color:#e0e0ff;">' + (i+1) + '</td>' +
+                '<td style="padding:5px 12px; color:#aab;">' + coord[1].toFixed(6) + '</td>' +
+                '<td style="padding:5px 12px; color:#aab;">' + coord[0].toFixed(6) + '</td>' +
+                '<td style="padding:5px 12px;"><input type="number" value="' + loiter + '" min="0" data-idx="' + i + '" style="width:70px; padding:3px 6px; border-radius:4px; border:1px solid #445; background:#222; color:#eee; font-size:12px;" /></td>';
+            tr.addEventListener('mouseenter', function() { tr.style.background = '#2a2d3a'; highlightWaypoint(i, coord); });
+            tr.addEventListener('mouseleave', function() { tr.style.background = ''; clearHighlight(); });
+            tbody.appendChild(tr);
+        });
+        document.getElementById('edit-panel').style.display = 'flex';
+    }
+
+    function highlightWaypoint(i, coord) {
+        clearHighlight();
+        editHighlightMarker = L.circleMarker([coord[1], coord[0]], { radius: 10, color: '#f5a623', fillColor: '#f5a623', fillOpacity: 0.8, weight: 3 }).addTo(map).bindTooltip('WP ' + (i+1), { permanent: true, direction: 'top' });
+    }
+
+    function clearHighlight() {
+        if (editHighlightMarker) { map.removeLayer(editHighlightMarker); editHighlightMarker = null; }
+    }
+
+    function setAllLoiter() {
+        var val = parseInt(document.getElementById('loiter-all').value) || 0;
+        document.querySelectorAll('#edit-table-body input[type="number"]').forEach(function(inp) { inp.value = val; });
+    }
+
+    function setRangeLoiter() {
+        var from = parseInt(document.getElementById('range-from').value) - 1;
+        var to   = parseInt(document.getElementById('range-to').value) - 1;
+        var val  = parseInt(document.getElementById('loiter-range').value) || 0;
+        document.querySelectorAll('#edit-table-body input[type="number"]').forEach(function(inp) {
+            var idx = parseInt(inp.getAttribute('data-idx'));
+            if (idx >= from && idx <= to) inp.value = val;
+        });
+    }
+
+    async function saveEditPanel() {
+        var inputs = document.querySelectorAll('#edit-table-body input[type="number"]');
+        var loiterTimes = [];
+        inputs.forEach(function(inp) { loiterTimes.push(parseInt(inp.value) || 0); });
+        routeGeoJSON.features[0].properties.loiter_times = loiterTimes;
+        closeEditPanel();
+
+        if (currentMissionFilename) {
+            try {
+                const res = await fetch(DRONE_BASE + '/missions/overwrite/' + currentMissionFilename, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ geojson: routeGeoJSON })
+                });
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+                setStatus('Loiter times saved to mission file.');
+                await refreshMissionList();
+            } catch(e) { setStatus('Save failed: ' + e.message); }
+        } else {
+            setStatus('Loiter times updated. Click Save Mission to write to disk.');
+        }
+    }
+
+    function closeEditPanel() {
+        clearHighlight();
+        document.getElementById('edit-panel').style.display = 'none';
+    }
+    </script>
+</body>
+</html>
